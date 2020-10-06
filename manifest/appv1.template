@@ -1,0 +1,657 @@
+---
+apiVersion: appmesh.k8s.aws/v1beta2
+kind: GatewayRoute
+metadata:
+  name: gateway-route-svc-paths
+  namespace: howto-k8s-ingress-gateway
+spec:
+  httpRoute:
+    match:
+      prefix: "/hackathon"
+    action:
+      target:
+        virtualService:
+          virtualServiceRef:
+            name: service-paths
+
+---
+apiVersion: appmesh.k8s.aws/v1beta2
+kind: VirtualService
+metadata:
+  name: service-paths
+  namespace: howto-k8s-ingress-gateway
+spec:
+  awsName: service-paths.howto-k8s-ingress-gateway.svc.cluster.local
+  provider:
+    virtualRouter:
+      virtualRouterRef:
+        name: service-paths
+
+---
+apiVersion: appmesh.k8s.aws/v1beta2
+kind: VirtualRouter
+metadata:
+  namespace: howto-k8s-ingress-gateway
+  name: service-paths
+spec:
+  listeners:
+    - portMapping:
+        port: 8080
+        protocol: http
+  routes:
+
+    - name: service-1
+      priority: 10
+      httpRoute:
+        match:
+          prefix: /s1
+        action:
+          weightedTargets:
+            - virtualNodeRef:
+                name: service-1
+              weight: 90
+            - virtualNodeRef:
+                name: service-1-v2
+              weight: 10
+    - name: service-1-headers
+      priority: 10
+      httpRoute:
+        match:
+          prefix: /s1
+          headers:
+            - name: version
+              match:
+                exact: v2
+        action:
+          weightedTargets:
+            - virtualNodeRef:
+                name: service-1-v2
+              weight: 1
+    - name: service-2-v1
+      priority: 20
+      httpRoute:
+        match:
+          prefix: /v1/s2
+        action:
+          weightedTargets:
+            - virtualNodeRef:
+                name: service-2
+              weight: 1
+        retryPolicy: 
+          maxRetries: 5
+          perRetryTimeout: 
+            value: 100
+            unit: ms
+          httpRetryEvents: 
+            - server-error
+    - name: service-2-v2
+      priority: 20
+      httpRoute:
+        match:
+          prefix: /v2/s2
+        action:
+          weightedTargets:
+            - virtualNodeRef:
+                name: service-2-v2
+              weight: 1
+        retryPolicy: 
+          maxRetries: 5
+          perRetryTimeout: 
+            value: 100
+            unit: ms
+          httpRetryEvents: 
+            - server-error
+    - name: service-3
+      priority: 30
+      httpRoute:
+        match:
+          prefix: /s3
+        action:
+          weightedTargets:
+            - virtualNodeRef:
+                name: service-3
+              weight: 1
+
+---
+apiVersion: appmesh.k8s.aws/v1beta2
+kind: VirtualNode
+metadata:
+  name: service-1
+  namespace: howto-k8s-ingress-gateway
+spec:
+  podSelector:
+    matchLabels:
+      app: service-1
+      version: v1
+  listeners:
+    - portMapping:
+        port: 8080
+        protocol: http
+      healthCheck:
+        protocol: http
+        path: '/ping'
+        healthyThreshold: 2
+        unhealthyThreshold: 2
+        timeoutMillis: 2000
+        intervalMillis: 5000
+  serviceDiscovery:
+    dns:
+      hostname: service-1.howto-k8s-ingress-gateway.svc.cluster.local
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-1
+  namespace: howto-k8s-ingress-gateway
+spec:
+  ports:
+    - port: 8080
+      name: http
+  selector:
+    app: service-1
+    version: v1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-1
+  namespace: howto-k8s-ingress-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: service-1
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: service-1
+        version: v1
+    spec:
+      containers:
+        - name: service-1
+          image: 720566589491.dkr.ecr.us-west-2.amazonaws.com/hackathon-appmesh/demoapp
+          ports:
+            - containerPort: 8080
+          env:
+            - name: "MESSAGE"
+              value: "This is service 1 running with version v1"
+
+---
+apiVersion: appmesh.k8s.aws/v1beta2
+kind: VirtualNode
+metadata:
+  name: service-2
+  namespace: howto-k8s-ingress-gateway
+spec:
+  podSelector:
+    matchLabels:
+      app: service-2
+      version: v1
+  listeners:
+    - portMapping:
+        port: 8080
+        protocol: http
+      healthCheck:
+        protocol: http
+        path: '/ping'
+        healthyThreshold: 2
+        unhealthyThreshold: 2
+        timeoutMillis: 2000
+        intervalMillis: 5000
+  serviceDiscovery:
+    dns:
+      hostname: service-2.howto-k8s-ingress-gateway.svc.cluster.local
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-2
+  namespace: howto-k8s-ingress-gateway
+spec:
+  ports:
+    - port: 8080
+      name: http
+  selector:
+    app: service-2
+    version: v1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-2
+  namespace: howto-k8s-ingress-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: service-2
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: service-2
+        version: v1
+    spec:
+      containers:
+        - name: service-2
+          image: 720566589491.dkr.ecr.us-west-2.amazonaws.com/hackathon-appmesh/demoapp
+          ports:
+            - containerPort: 8080
+          env:
+            - name: "MESSAGE"
+              value: "This is service 2 running with version v1"
+
+---
+apiVersion: appmesh.k8s.aws/v1beta2
+kind: VirtualNode
+metadata:
+  name: service-3
+  namespace: howto-k8s-ingress-gateway
+spec:
+  podSelector:
+    matchLabels:
+      app: service-3
+      version: v1
+  listeners:
+    - portMapping:
+        port: 8080
+        protocol: http
+      healthCheck:
+        protocol: http
+        path: '/ping'
+        healthyThreshold: 2
+        unhealthyThreshold: 2
+        timeoutMillis: 2000
+        intervalMillis: 5000
+  backends:
+    - virtualService:
+        virtualServiceRef:
+          name: m2m-tls-paths
+  backendDefaults:
+    clientPolicy:
+      tls:
+        enforce: true
+        validation:
+          trust:
+            file:
+              #certificateChain: /certs/ca_1_cert.pem
+              certificateChain: /certs/ca_1_ca_2_bundle.pem
+  serviceDiscovery:
+    dns:
+      hostname: service-3.howto-k8s-ingress-gateway.svc.cluster.local
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-3
+  namespace: howto-k8s-ingress-gateway
+spec:
+  ports:
+    - port: 8080
+      name: http
+  selector:
+    app: service-3
+    version: v1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-3
+  namespace: howto-k8s-ingress-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: service-3
+      version: v1
+  template:
+    metadata:
+      annotations:
+      # appmesh.k8s.aws/secretMounts: "ca1-cert-tls:/certs/"
+        appmesh.k8s.aws/secretMounts: "ca1-ca2-bundle-tls:/certs/"
+      labels:
+        app: service-3
+        version: v1
+    spec:
+      hostAliases:
+      - ip: "10.10.10.10"
+        hostnames:
+        - "m2m-tls-paths.howto-k8s-ingress-gateway.svc.cluster.local"
+      containers:
+        - name: service-3
+          image: 720566589491.dkr.ecr.us-west-2.amazonaws.com/hackathon-appmesh/demoapp
+          ports:
+            - containerPort: 8080
+          env:
+            - name: "MESSAGE"
+              value: "This is service 3 running with version v1"
+            - name: "M2M"
+              value: "m2m-tls-paths.howto-k8s-ingress-gateway.svc.cluster.local:8080"
+
+---
+apiVersion: appmesh.k8s.aws/v1beta2
+kind: VirtualNode
+metadata:
+  name: service-1-v2
+  namespace: howto-k8s-ingress-gateway
+spec:
+  podSelector:
+    matchLabels:
+      app: service-1-v2
+      version: v2
+  listeners:
+    - portMapping:
+        port: 8080
+        protocol: http
+      healthCheck:
+        protocol: http
+        path: '/ping'
+        healthyThreshold: 2
+        unhealthyThreshold: 2
+        timeoutMillis: 2000
+        intervalMillis: 5000
+  serviceDiscovery:
+    dns:
+      hostname: service-1-v2.howto-k8s-ingress-gateway.svc.cluster.local
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-1-v2
+  namespace: howto-k8s-ingress-gateway
+spec:
+  ports:
+    - port: 8080
+      name: http
+  selector:
+    app: service-1-v2
+    version: v2
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-1-v2
+  namespace: howto-k8s-ingress-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: service-1-v2
+      version: v2
+  template:
+    metadata:
+      labels:
+        app: service-1-v2
+        version: v2
+    spec:
+      containers:
+        - name: service-1-v2
+          image: 720566589491.dkr.ecr.us-west-2.amazonaws.com/hackathon-appmesh/demoapp
+          ports:
+            - containerPort: 8080
+          env:
+            - name: "MESSAGE"
+              value: "This is service 1 running with version v2"
+
+---
+
+apiVersion: appmesh.k8s.aws/v1beta2
+kind: VirtualNode
+metadata:
+  name: service-2-v2
+  namespace: howto-k8s-ingress-gateway
+spec:
+  podSelector:
+    matchLabels:
+      app: service-2-v2
+      version: v2
+  listeners:
+    - portMapping:
+        port: 8080
+        protocol: http
+      healthCheck:
+        protocol: http
+        path: '/ping'
+        healthyThreshold: 2
+        unhealthyThreshold: 2
+        timeoutMillis: 2000
+        intervalMillis: 5000
+  serviceDiscovery:
+    dns:
+      hostname: service-2-v2.howto-k8s-ingress-gateway.svc.cluster.local
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-2-v2
+  namespace: howto-k8s-ingress-gateway
+spec:
+  ports:
+    - port: 8080
+      name: http
+  selector:
+    app: service-2-v2
+    version: v2
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-2-v2
+  namespace: howto-k8s-ingress-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: service-2-v2
+      version: v2
+  template:
+    metadata:
+      labels:
+        app: service-2-v2
+        version: v2
+    spec:
+      containers:
+        - name: service-2-v2
+          image: 720566589491.dkr.ecr.us-west-2.amazonaws.com/hackathon-appmesh/demoapp
+          ports:
+            - containerPort: 8080
+          env:
+            - name: "MESSAGE"
+              value: "This is service 2 running with version v2"
+
+---
+apiVersion: appmesh.k8s.aws/v1beta2
+kind: VirtualNode
+metadata:
+  name: service-4
+  namespace: howto-k8s-ingress-gateway
+spec:
+  podSelector:
+    matchLabels:
+      app: service-4
+      version: v1
+  listeners:
+    - portMapping:
+        port: 8080
+        protocol: http
+      healthCheck:
+        protocol: http
+        path: '/ping'
+        healthyThreshold: 2
+        unhealthyThreshold: 2
+        timeoutMillis: 2000
+        intervalMillis: 5000
+      tls:
+        mode: STRICT
+        certificate:
+          file:
+            certificateChain: /certs/colorapp-blue_cert_chain.pem
+            privateKey: /certs/colorapp-blue_key.pem
+  serviceDiscovery:
+    dns:
+      hostname: service-4.howto-k8s-ingress-gateway.svc.cluster.local
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-4
+  namespace: howto-k8s-ingress-gateway
+spec:
+  ports:
+    - port: 8080
+      name: http
+  selector:
+    app: service-4
+    version: v1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-4
+  namespace: howto-k8s-ingress-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: service-4
+      version: v1
+  template:
+    metadata:
+      annotations:
+        appmesh.k8s.aws/secretMounts: "colorapp-blue-tls:/certs/"
+      labels:
+        app: service-4
+        version: v1
+    spec:
+      containers:
+        - name: service-4
+          image: 720566589491.dkr.ecr.us-west-2.amazonaws.com/hackathon-appmesh/demoapp
+          ports:
+            - containerPort: 8080
+          env:
+            - name: "MESSAGE"
+              value: "This is service 4 running with version v1"
+
+---
+apiVersion: appmesh.k8s.aws/v1beta2
+kind: VirtualNode
+metadata:
+  name: service-5
+  namespace: howto-k8s-ingress-gateway
+spec:
+  podSelector:
+    matchLabels:
+      app: service-5
+      version: v1
+  listeners:
+    - portMapping:
+        port: 8080
+        protocol: http
+      healthCheck:
+        protocol: http
+        path: '/ping'
+        healthyThreshold: 2
+        unhealthyThreshold: 2
+        timeoutMillis: 2000
+        intervalMillis: 5000
+      tls:
+        mode: STRICT
+        certificate:
+          file:
+            certificateChain: /certs/colorapp-green_cert_chain.pem
+            privateKey: /certs/colorapp-green_key.pem
+  serviceDiscovery:
+    dns:
+      hostname: service-5.howto-k8s-ingress-gateway.svc.cluster.local
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-5
+  namespace: howto-k8s-ingress-gateway
+spec:
+  ports:
+    - port: 8080
+      name: http
+  selector:
+    app: service-5
+    version: v1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-5
+  namespace: howto-k8s-ingress-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: service-5
+      version: v1
+  template:
+    metadata:
+      annotations:
+        appmesh.k8s.aws/secretMounts: "colorapp-green-tls:/certs/"
+      labels:
+        app: service-5
+        version: v1
+    spec:
+      containers:
+        - name: service-5
+          image: 720566589491.dkr.ecr.us-west-2.amazonaws.com/hackathon-appmesh/demoapp
+          ports:
+            - containerPort: 8080
+          env:
+            - name: "MESSAGE"
+              value: "This is service 5 running with version v1"
+
+---
+apiVersion: appmesh.k8s.aws/v1beta2
+kind: VirtualService
+metadata:
+  name: m2m-tls-paths
+  namespace: howto-k8s-ingress-gateway
+spec:
+  awsName: m2m-tls-paths.howto-k8s-ingress-gateway.svc.cluster.local
+  provider:
+    virtualRouter:
+      virtualRouterRef:
+        name: m2m-tls-paths
+
+---
+apiVersion: appmesh.k8s.aws/v1beta2
+kind: VirtualRouter
+metadata:
+  namespace: howto-k8s-ingress-gateway
+  name: m2m-tls-paths
+spec:
+  listeners:
+    - portMapping:
+        port: 8080
+        protocol: http
+  routes:
+    - name: service-1
+      priority: 10
+      httpRoute:
+        match:
+          prefix: /s4
+        action:
+          weightedTargets:
+            - virtualNodeRef:
+                name: service-4
+              weight: 1          
+    - name: service-5
+      priority: 20
+      httpRoute:
+        match:
+          prefix: /s5
+        action:
+          weightedTargets:
+            - virtualNodeRef:
+                name: service-5
+              weight: 1
+
+
